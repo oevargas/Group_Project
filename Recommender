@@ -1,0 +1,152 @@
+###Barebones Recommendation System Design
+library(arules)
+library(shiny)
+library(shinyjs)  
+library(shinybusy)
+
+#Read in data
+MOVIES <- read.csv("movies.csv",stringsAsFactors = FALSE)
+RATINGS <- read.csv("ratings.csv",stringsAsFactors = FALSE)
+
+#Defining a "like" as a user rating a movie as 4.25 and above
+RATINGS <- subset(RATINGS,rating>=4.25)
+
+#Make a dataframe with userID and title
+CARTS <- merge(RATINGS[,c("userId","movieId")],MOVIES[,c("movieId","title")],by="movieId")
+CARTS$movieId <- NULL
+
+#Change names and create csv to be used later
+names(CARTS) <- c("transactionID","item")
+write.csv(CARTS,file="moviecarts.csv")
+
+#Creating the Transactions
+TRANS <- read.transactions(
+  file = "moviecarts.csv",
+  format = "single",
+  header = TRUE,
+  sep = ",",
+  cols=c("transactionID","item"),
+  rm.duplicates = TRUE
+)
+
+### recommend function
+recommend <- function(likes=likes,TRANS,number=8,confidence=0.25,popularity=0.001) {
+  #Rule creation using the Apriori algorithm. A movie must be liked by at least 5 users to be considered
+  RULES <- apriori(TRANS,
+                   parameter = list(supp = 5/length(TRANS),
+                                    conf=confidence,
+                                    minlen=2,
+                                    maxtime=30),
+                   appearance = list(lhs=likes,default="rhs"),
+                   control = list(verbose=FALSE))
+  
+  #Keep only statistically significant rules
+  RULES <- RULES[is.significant(RULES,TRANS)]
+  
+  #Coerce RULES object into data frame
+  RULESDF <- DATAFRAME(RULES,
+                       separate = TRUE, 
+                       setStart = '', 
+                       itemSep = ' + ', 
+                       setEnd = '')
+  
+  #Return the highest level of confidence for each movie
+  MAXCONF <- aggregate(confidence ~ RHS,
+                       data= RULESDF, 
+                       FUN = max )
+  
+  #Return popularity for each movie
+  MOVIEDETAILS <- data.frame(Movie = names(itemFrequency(TRANS)),
+                             Popularity = as.numeric(itemFrequency(TRANS)))
+  #Combine MAXCONF and the popularity into one data frame
+  RESULTS <- merge(MAXCONF,
+                   MOVIEDETAILS,
+                   by.x="RHS", 
+                   by.y="Movie" )
+  
+  #Order the results by confidence descending
+  RESULTS <- RESULTS[order(RESULTS$confidence, 
+                           decreasing = TRUE),]
+  
+  #Rename columns
+  names(RESULTS) <- c("Movie","Confidence","Popularity")
+  
+  
+  #Subset RESULTS based off user-inputed popularity parameter 
+  #In the future, we could use percentiles rather than popularity. Popularity is harder to understand without knowing the dataset
+  #Added check to see if popularity filter was too strong. If it was, the new popularity gets automatically adjusted to be the 5th percentile of movies in the results
+  if(min(RESULTS$Popularity) > popularity) {RESULTS2 <- subset(RESULTS, Popularity <= quantile(RESULTS$Popularity, probs = .05));warning("Popularity constraint too strict. Automatically adjusted")}
+  if(min(RESULTS$Popularity) <= popularity) {RESULTS2 <- subset(RESULTS, Popularity <= popularity)}
+  
+  #Modification that allows all results to be returned if there are more than user-inputted number of recommendation
+  #If the number of recommendations returned is greater than the number
+  if (length(RESULTS2$Confidence[which(RESULTS2$Confidence==1)]) > number) 
+  {
+    #Take subset of rules where the confidence equals 1
+    RESULTS2 <- subset(RESULTS2, Confidence == 1)
+    
+    #Remove row names
+    row.names(RESULTS2) <- NULL
+    
+    #Make confidence look nicer
+    RESULTS2$Confidence <- paste(round(100*RESULTS2$Confidence,digits=2),"%",sep="")
+    
+    #Make popularity look nicer
+    RESULTS2$Popularity <- paste(round(100*RESULTS2$Popularity,digits=2),"%",sep="")
+  }
+  
+  #If the number of recommendations returned is less than or equal to the number
+  if (length(RESULTS2$Confidence[which(RESULTS2$Confidence==1)]) <= number) 
+  {
+    #Keep only the top n recommendations
+    RESULTS2 <- head(RESULTS2, number)
+    
+    #Remove row names
+    row.names(RESULTS2) <- NULL
+    
+    #Make confidence look nicer
+    RESULTS2$Confidence <- paste(round(100*RESULTS2$Confidence, digits=2), "%",sep="")
+    
+    #Make popularity look nicer
+    RESULTS2$Popularity <- paste(round(100*RESULTS2$Popularity, digits=2 ), "%",sep="")
+  }
+  
+  if (nrow(RESULTS2) < number ) { warning("Number of recommendations with at least the desired level of confidence and popularity is less than the number requested") }
+  return(RESULTS2)
+}
+
+
+
+
+
+
+### Shiny app barebones
+
+ui <- fluidPage(
+  add_busy_spinner(spin = "fading-circle"),
+  titlePanel("Obscure Movie Recommendation System"),
+  sidebarPanel(
+    #Allows user to search for favorite movies
+    selectizeInput("UserLikes", label = "Enter Some of Your Favorite Movies:", choices = NULL, options = list(maxOptions = 5), multiple = T),
+    #Allows user to choose the number of recommendations
+    sliderInput("RecNumber","How Many Recommendations?", value = 8, min = 1, max = 50, step = 1),
+    numericInput("Confidence","Minimum Confidence Level", value = .15, min = .01, max = 1, step = .01),
+    numericInput("Popularity","Maximum Popularity Level", value = .002, min = 0, max = .5, step = .0001),
+    actionButton("SubmitButton", "Get Recommendations")
+  ),
+  mainPanel(
+    tableOutput("view")
+  )
+  
+  
+)
+server <- function(input, output, session) {
+  updateSelectizeInput(session, "UserLikes", choices = itemLabels(TRANS),server = T)
+  all_inputs <- observeEvent(input$SubmitButton, 
+                             {
+                               output$view <- renderTable({recommend(likes = input$UserLikes, TRANS, number = input$RecNumber, confidence = input$Confidence, popularity = input$Popularity)})
+                             })
+  
+  
+}
+shinyApp(ui, server)
