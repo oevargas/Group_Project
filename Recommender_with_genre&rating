@@ -19,7 +19,6 @@ RATINGS <- subset(RATINGS,rating>=4.25)
 CARTS <- merge(RATINGS[,c("userId","movieId")],MOVIES[,c("movieId","title","genres")],by="movieId")
 CARTS <- CARTS[,c("userId","title","genres","movieId")]
 
-
 #Change names and create csv to be used later
 names(CARTS) <- c("transactionID","item","genre","movieId")
 write.csv(CARTS,file="moviecarts.csv")
@@ -36,11 +35,11 @@ TRANS <- read.transactions(
 
 CARTS1 <- aggregate(RATINGS[3],list(RATINGS$movieId),mean)
 names(CARTS1) <- c("movieId","avg.rating")
+CARTS2 <- CARTS[,c("item","genre","movieId")]
 
-CARTS2 <- merge(CARTS1,
-                CARTS,
-                by="movieId")
-CARTS2 <- CARTS2[,c("transactionID","item","genre","avg.rating")]
+CARTS3 <- merge(CARTS2, CARTS1, by="movieId" )
+names(CARTS3) <- c("movieId","item","genre","avg.rating")
+
 
 ### recommend function
 recommend <- function(likes=likes,TRANS,number=8,confidence=0.25,popularity=0.001) {
@@ -79,7 +78,7 @@ recommend <- function(likes=likes,TRANS,number=8,confidence=0.25,popularity=0.00
   RESULTS
  
   RESULTS <- merge(RESULTS,
-                   CARTS1,
+                   CARTS3,
                    by.x="RHS", 
                    by.y="item")
   
@@ -88,7 +87,10 @@ recommend <- function(likes=likes,TRANS,number=8,confidence=0.25,popularity=0.00
                            decreasing = TRUE),]
   
   #Rename columns
-  names(RESULTS) <- c("Movie","Confidence","Popularity","Genres","Rating")
+  names(RESULTS) <- c("Movie","Confidence","Popularity","movieID", "Genres","Rating")
+  RESULTS <- RESULTS[,c("Movie","Confidence","Popularity", "Genres","Rating")]
+  
+  RESULTS <- unique( RESULTS[ , 1:5 ] )
   
   
   #Subset RESULTS based off user-inputed popularity parameter 
@@ -169,3 +171,4 @@ server <- function(input, output, session) {
   
 }
 shinyApp(ui, server)
+
