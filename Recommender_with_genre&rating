@@ -33,12 +33,12 @@ TRANS <- read.transactions(
   rm.duplicates = TRUE
 )
 
-CARTS1 <- aggregate(RATINGS[3],list(RATINGS$movieId),mean)
-names(CARTS1) <- c("movieId","avg.rating")
-CARTS2 <- CARTS[,c("item","genre","movieId")]
+data <- aggregate(RATINGS[3],list(RATINGS$movieId),mean)
+names(data) <- c("movieId","avg.rating")
+data1 <- CARTS[,c("item","genre","movieId")]
 
-CARTS3 <- merge(CARTS2, CARTS1, by="movieId" )
-names(CARTS3) <- c("movieId","item","genre","avg.rating")
+final_data <- merge(data1, data, by="movieId" )
+names(final_data) <- c("movieId","item","genre","avg.rating")
 
 
 ### recommend function
@@ -78,7 +78,7 @@ recommend <- function(likes=likes,TRANS,number=8,confidence=0.25,popularity=0.00
   RESULTS
  
   RESULTS <- merge(RESULTS,
-                   CARTS3,
+                   final_data,
                    by.x="RHS", 
                    by.y="item")
   
