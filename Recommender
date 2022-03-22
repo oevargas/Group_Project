@@ -142,11 +142,11 @@ ui <- fluidPage(
 )
 server <- function(input, output, session) {
   updateSelectizeInput(session, "UserLikes", choices = itemLabels(TRANS),server = T)
-  all_inputs <- observeEvent(input$SubmitButton, 
-                             {
-                               output$view <- renderTable({recommend(likes = input$UserLikes, TRANS, number = input$RecNumber, confidence = input$Confidence, popularity = input$Popularity)})
-                             })
+  x1 <- eventReactive(input$SubmitButton, {input$UserLikes})
+  x2 <- eventReactive(input$SubmitButton, {input$RecNumber})
+  x3 <- eventReactive(input$SubmitButton, {input$Confidence})
+  x4 <- eventReactive(input$SubmitButton, {input$Popularity})
+  output$view <- renderTable({recommend(likes = x1(), TRANS, number = x2(), confidence = x3(), popularity = x4())})
   
-  
-}
+  }
 shinyApp(ui, server)
