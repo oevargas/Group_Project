@@ -34,7 +34,7 @@ TRANS <- read.transactions(
 #Creating Genre List
 genrelist <- c( "All Selected", "Adventure" , "Comedy", "Action", "Drama", "Crime", "Children","Mystery", "Documentary", "Animation", "Thriller", "Horror", "Fantasy","Western", "Film-Noir", "Romance", "War", "Sci-Fi", "Musical" )
 
-### recommend function
+### Recommend Function
 recommend <- function(likes=likes,TRANS,number=8,confidence=0.25,popularity=0.001, selected_genre = "All Selected" ) {
   #Rule creation using the Apriori algorithm. A movie must be liked by at least 5 users to be considered
   RULES <- apriori(TRANS,
