@@ -31,6 +31,13 @@ TRANS <- read.transactions(
   rm.duplicates = TRUE
 )
 
+data <- aggregate(RATINGS[3],list(RATINGS$movieId),mean)
+names(data) <- c("movieId","avg.rating")
+data1 <- CARTS[,c("item", "movieId")]
+final_data <- merge(data1, data, by="movieId" )
+names(final_data) <- c("movieId","item","avg.rating")
+
+
 #Creating Genre List
 genrelist <- c( "All Selected", "Adventure" , "Comedy", "Action", "Drama", "Crime", "Children","Mystery", "Documentary", "Animation", "Thriller", "Horror", "Fantasy","Western", "Film-Noir", "Romance", "War", "Sci-Fi", "Musical" )
 
@@ -69,6 +76,14 @@ recommend <- function(likes=likes,TRANS,number=8,confidence=0.25,popularity=0.00
                        MOVIES, 
                        by.x = "Movie",
                        by.y = "title")[,c("Movie","Popularity","genres")]
+                       
+                       
+#Join with final_results table to get average_rating
+
+MOVIEDETAILS <- merge(MOVIEDETAILS, 
+                        final_data, 
+                        by.x = "Movie",
+                        by.y = "item")
 
 #Condition on All Genres
   if (selected_genre != "All Selected" ) {
@@ -87,7 +102,9 @@ recommend <- function(likes=likes,TRANS,number=8,confidence=0.25,popularity=0.00
                            decreasing = TRUE),]
   
   #Rename columns
-  names(RESULTS) <- c("Movie","Confidence","Popularity", "Genre")
+  names(RESULTS) <- c("Movie","Confidence","Popularity", "Genre","movieID","Rating")
+  
+  RESULTS <- unique( RESULTS[ , c(1:4,6) ] )
   
   
   #Subset RESULTS based off user-inputed popularity parameter 
