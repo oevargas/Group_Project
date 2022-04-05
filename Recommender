@@ -3,6 +3,8 @@ library(arules)
 library(shiny)
 library(shinyjs)  
 library(shinybusy)
+library(data.table)
+library(arules)
 
 #Read in data
 MOVIES <- read.csv("movies.csv",stringsAsFactors = FALSE)
@@ -29,8 +31,18 @@ TRANS <- read.transactions(
   rm.duplicates = TRUE
 )
 
-### recommend function
-recommend <- function(likes=likes,TRANS,number=8,confidence=0.25,popularity=0.001) {
+data <- aggregate(RATINGS[3],list(RATINGS$movieId),mean)
+names(data) <- c("movieId","avg.rating")
+data1 <- CARTS[,c("item", "movieId")]
+final_data <- merge(data1, data, by="movieId" )
+names(final_data) <- c("movieId","item","avg.rating")
+
+
+#Creating Genre List
+genrelist <- c( "All Selected", "Adventure" , "Comedy", "Action", "Drama", "Crime", "Children","Mystery", "Documentary", "Animation", "Thriller", "Horror", "Fantasy","Western", "Film-Noir", "Romance", "War", "Sci-Fi", "Musical" )
+
+### Recommend Function
+recommend <- function(likes=likes,TRANS,number=8,confidence=0.25,popularity=0.001, selected_genre = "All Selected" ) {
   #Rule creation using the Apriori algorithm. A movie must be liked by at least 5 users to be considered
   RULES <- apriori(TRANS,
                    parameter = list(supp = 5/length(TRANS),
@@ -58,6 +70,27 @@ recommend <- function(likes=likes,TRANS,number=8,confidence=0.25,popularity=0.00
   #Return popularity for each movie
   MOVIEDETAILS <- data.frame(Movie = names(itemFrequency(TRANS)),
                              Popularity = as.numeric(itemFrequency(TRANS)))
+                             
+  #Filtering Genre
+  MOVIEDETAILS <-  merge(MOVIEDETAILS, 
+                       MOVIES, 
+                       by.x = "Movie",
+                       by.y = "title")[,c("Movie","Popularity","genres")]
+                       
+                       
+#Join with final_results table to get average_rating
+
+MOVIEDETAILS <- merge(MOVIEDETAILS, 
+                        final_data, 
+                        by.x = "Movie",
+                        by.y = "item")
+
+#Condition on All Genres
+  if (selected_genre != "All Selected" ) {
+    MOVIEDETAILS <- MOVIEDETAILS %>% dplyr::filter (genres %like% selected_genre)
+  }
+                             
+                             
   #Combine MAXCONF and the popularity into one data frame
   RESULTS <- merge(MAXCONF,
                    MOVIEDETAILS,
@@ -69,7 +102,9 @@ recommend <- function(likes=likes,TRANS,number=8,confidence=0.25,popularity=0.00
                            decreasing = TRUE),]
   
   #Rename columns
-  names(RESULTS) <- c("Movie","Confidence","Popularity")
+  names(RESULTS) <- c("Movie","Confidence","Popularity", "Genre","movieID","Rating")
+  
+  RESULTS <- unique( RESULTS[ , c(1:4,6) ] )
   
   
   #Subset RESULTS based off user-inputed popularity parameter 
@@ -132,6 +167,7 @@ ui <- fluidPage(
     sliderInput("RecNumber","How Many Recommendations?", value = 8, min = 1, max = 50, step = 1),
     numericInput("Confidence","Minimum Confidence Level", value = .15, min = .01, max = 1, step = .01),
     numericInput("Popularity","Maximum Popularity Level", value = .002, min = 0, max = .5, step = .0001),
+    selectInput("GenreSelected", label = "Enter genre preference:",genrelist),
     actionButton("SubmitButton", "Get Recommendations")
   ),
   mainPanel(
@@ -142,11 +178,12 @@ ui <- fluidPage(
 )
 server <- function(input, output, session) {
   updateSelectizeInput(session, "UserLikes", choices = itemLabels(TRANS),server = T)
-  all_inputs <- observeEvent(input$SubmitButton, 
-                             {
-                               output$view <- renderTable({recommend(likes = input$UserLikes, TRANS, number = input$RecNumber, confidence = input$Confidence, popularity = input$Popularity)})
-                             })
+  x1 <- eventReactive(input$SubmitButton, {input$UserLikes})
+  x2 <- eventReactive(input$SubmitButton, {input$RecNumber})
+  x3 <- eventReactive(input$SubmitButton, {input$Confidence})
+  x4 <- eventReactive(input$SubmitButton, {input$Popularity})
+  x5 <- eventReactive(input$SubmitButton, {input$GenreSelected})
+  output$view <- renderTable({recommend(likes = x1(), TRANS, number = x2(), confidence = x3(), popularity = x4(), selected_genre = x5())})
   
-  
-}
+  }
 shinyApp(ui, server)
