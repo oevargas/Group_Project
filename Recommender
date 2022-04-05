@@ -31,6 +31,7 @@ TRANS <- read.transactions(
   rm.duplicates = TRUE
 )
 
+## merge avg ratings to movieid
 data <- aggregate(RATINGS[3],list(RATINGS$movieId),mean)
 names(data) <- c("movieId","avg.rating")
 data1 <- CARTS[,c("item", "movieId")]
