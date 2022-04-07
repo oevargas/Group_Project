@@ -1,4 +1,5 @@
-###Barebones Recommendation System Design
+###Recommendation System Design
+###Team 33 - NOYBA
 library(arules)
 library(shiny)
 library(shinyjs)  
@@ -6,12 +7,13 @@ library(shinybusy)
 library(data.table)
 library(arules)
 
+
+## CLEAR ENVIRONMENT  ############
+rm(list = ls()) 
+
 #Read in data
 MOVIES <- read.csv("movies.csv",stringsAsFactors = FALSE)
 RATINGS <- read.csv("ratings.csv",stringsAsFactors = FALSE)
-
-#Defining a "like" as a user rating a movie as 4.25 and above
-RATINGS <- subset(RATINGS,rating>=4.25)
 
 #Make a dataframe with userID and title
 CARTS <- merge(RATINGS[,c("userId","movieId")],MOVIES[,c("movieId","title")],by="movieId")
@@ -31,10 +33,16 @@ TRANS <- read.transactions(
   rm.duplicates = TRUE
 )
 
-## merge avg ratings to movieid
+# take Ratings and get average by movieid
 data <- aggregate(RATINGS[3],list(RATINGS$movieId),mean)
+
+#subset the avg data - Defining a "like" as a user rating a movie as 4.00 and above
+data <- subset(data,avg.rating>=4.00)
+
+#merge data to load final_data (avg rating for each movie title)
 names(data) <- c("movieId","avg.rating")
-data1 <- CARTS[,c("item", "movieId")]
+### data1 <- CARTS[,c("item", "movieId")] ##comment out db 4-6-22
+data1 <- MOVIES[,c("title", "movieId")]   ##add db 
 final_data <- merge(data1, data, by="movieId" )
 names(final_data) <- c("movieId","item","avg.rating")
 
@@ -71,27 +79,27 @@ recommend <- function(likes=likes,TRANS,number=8,confidence=0.25,popularity=0.00
   #Return popularity for each movie
   MOVIEDETAILS <- data.frame(Movie = names(itemFrequency(TRANS)),
                              Popularity = as.numeric(itemFrequency(TRANS)))
-                             
+  
   #Filtering Genre
   MOVIEDETAILS <-  merge(MOVIEDETAILS, 
-                       MOVIES, 
-                       by.x = "Movie",
-                       by.y = "title")[,c("Movie","Popularity","genres")]
-                       
-                       
-#Join with final_results table to get average_rating
-
-MOVIEDETAILS <- merge(MOVIEDETAILS, 
+                         MOVIES, 
+                         by.x = "Movie",
+                         by.y = "title")[,c("Movie","Popularity","genres")]
+  
+  
+  #Join with final_results table to get average_rating
+  
+  MOVIEDETAILS <- merge(MOVIEDETAILS, 
                         final_data, 
                         by.x = "Movie",
                         by.y = "item")
-
-#Condition on All Genres
+  
+  #Condition on All Genres
   if (selected_genre != "All Selected" ) {
     MOVIEDETAILS <- MOVIEDETAILS %>% dplyr::filter (genres %like% selected_genre)
   }
-                             
-                             
+  
+  
   #Combine MAXCONF and the popularity into one data frame
   RESULTS <- merge(MAXCONF,
                    MOVIEDETAILS,
@@ -152,10 +160,6 @@ MOVIEDETAILS <- merge(MOVIEDETAILS,
 }
 
 
-
-
-
-
 ### Shiny app barebones
 
 ui <- fluidPage(
@@ -186,5 +190,6 @@ server <- function(input, output, session) {
   x5 <- eventReactive(input$SubmitButton, {input$GenreSelected})
   output$view <- renderTable({recommend(likes = x1(), TRANS, number = x2(), confidence = x3(), popularity = x4(), selected_genre = x5())})
   
-  }
+}
 shinyApp(ui, server)
+
