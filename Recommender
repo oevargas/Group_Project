@@ -15,6 +15,11 @@ rm(list = ls())
 MOVIES <- read.csv("movies.csv",stringsAsFactors = FALSE)
 LINKS <-  read.csv("links.csv",stringsAsFactors = FALSE)
 LINKS <- merge(LINKS, MOVIES, by = "movieId")
+
+for (i in 1:nrow(LINKS)) {
+  LINKS$tmdbLink[i] <- paste0("https://www.themoviedb.org/movie/", LINKS$tmdbId[i])
+}
+
 RATINGS <- read.csv("ratings.csv",stringsAsFactors = FALSE)
 
 
@@ -97,6 +102,11 @@ recommend <- function(likes=likes,TRANS,number=10,confidence=0.25,popularity=0.0
                         by.x = "Movie",
                         by.y = "item")
   
+  MOVIEDETAILS <- merge(MOVIEDETAILS,
+                        LINKS[,c("title","tmdbLink")],
+                        by.x = "Movie",
+                        by.y = "title")
+  
   #Condition on All Genres
   if (selected_genre != "All Selected" ) {
     MOVIEDETAILS <- MOVIEDETAILS %>% dplyr::filter (genres %like% selected_genre)
@@ -114,9 +124,9 @@ recommend <- function(likes=likes,TRANS,number=10,confidence=0.25,popularity=0.0
                            decreasing = TRUE),]
   
   #Rename columns
-  names(RESULTS) <- c("Movie","Confidence","Popularity", "Genre","movieID","Rating")
+  names(RESULTS) <- c("Movie","Confidence","Popularity", "Genre","movieID","Rating", "Link")
   
-  RESULTS <- unique( RESULTS[ , c(1:4,6) ] )
+  RESULTS <- unique( RESULTS[ , c(1:4,6:7) ] )
   
   
   #Subset RESULTS based off user-inputed popularity parameter 
@@ -188,7 +198,7 @@ ui <- fluidPage(
     #Allows user to choose the number of recommendations
     sliderInput("RecNumber","How Many Recommendations?", value = 10, min = 1, max = 50, step = 1),
     numericInput("Confidence","Minimum Confidence Level", value = .15, min = .01, max = 1, step = .01),
-    radioButtons("Popularity", "Movie Obscurity Level", choices = list("Least Popular" = .001, "Somewhat Popular" = .002,"Most Popular" = .003),selected = 1),
+    radioButtons("Popularity", "Movie Obscurity Level", choices = list("Least Popular" = .001, "Somewhat Popular" = .002,"Most Popular" = .003)),
     #numericInput("Popularity","Maximum Popularity Level", value = .002, min = 0, max = .5, step = .0001),
     selectInput("GenreSelected", label = "Enter Genre Preference (Optional):",genrelist),
     actionButton("SubmitButton", "Get Recommendations")
@@ -202,18 +212,20 @@ ui <- fluidPage(
 )
 server <- function(input, output, session) {
   updateSelectizeInput(session, "UserLikes", choices = itemLabels(TRANS),server = T)
-  x1 <- eventReactive(input$SubmitButton, {input$UserLikes})
-  x2 <- eventReactive(input$SubmitButton, {input$RecNumber})
-  x3 <- eventReactive(input$SubmitButton, {input$Confidence})
-  x4 <- eventReactive(input$SubmitButton, {input$Popularity})
-  x5 <- eventReactive(input$SubmitButton, {input$GenreSelected})
+   x1 <- eventReactive(input$SubmitButton, {input$UserLikes})
+   x2 <- eventReactive(input$SubmitButton, {input$RecNumber})
+   x3 <- eventReactive(input$SubmitButton, {input$Confidence})
+   x4 <- eventReactive(input$SubmitButton, {input$Popularity})
+   x5 <- eventReactive(input$SubmitButton, {input$GenreSelected})
+
   output$view <- renderReactable({reactable(
     recommend(likes = x1(), TRANS, number = x2(), confidence = x3(), popularity = x4(), selected_genre = x5()),
     highlight = TRUE,
     columns = list(
             Confidence = colDef(format = colFormat(percent = TRUE, digits = 2)),
             Popularity = colDef(format = colFormat(percent = TRUE, digits = 2)),
-            Rating = colDef(format = colFormat(digits = 2), cell = function(value) rating_stars(value))
+            Rating = colDef(format = colFormat(digits = 2), cell = function(value) rating_stars(value)),
+            tmdbLink = colDef(cell = function(value) {htmltools::tags$a(href = value, target = "_blank", value)})
           )
     )
     })
@@ -222,3 +234,4 @@ server <- function(input, output, session) {
   
 }
 shinyApp(ui, server)
+
