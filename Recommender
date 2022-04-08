@@ -6,14 +6,23 @@ library(shinyjs)
 library(shinybusy)
 library(data.table)
 library(arules)
-
-
+library(htmltools)
+library(reactable)
 ## CLEAR ENVIRONMENT  ############
 rm(list = ls()) 
 
 #Read in data
 MOVIES <- read.csv("movies.csv",stringsAsFactors = FALSE)
+LINKS <-  read.csv("links.csv",stringsAsFactors = FALSE)
+LINKS <- merge(LINKS, MOVIES, by = "movieId")
 RATINGS <- read.csv("ratings.csv",stringsAsFactors = FALSE)
+
+
+# take Ratings and get average by movieid
+data <- aggregate(rating~movieId, data = RATINGS, FUN = mean)
+
+#subset the avg data - Defining a "like" as a user rating a movie as 4.00 and above
+RATINGS <- subset(RATINGS, rating>=4.00)
 
 #Make a dataframe with userID and title
 CARTS <- merge(RATINGS[,c("userId","movieId")],MOVIES[,c("movieId","title")],by="movieId")
@@ -33,31 +42,25 @@ TRANS <- read.transactions(
   rm.duplicates = TRUE
 )
 
-# take Ratings and get average by movieid
-data <- aggregate(RATINGS[3],list(RATINGS$movieId),mean)
-
-#subset the avg data - Defining a "like" as a user rating a movie as 4.00 and above
-data <- subset(data,avg.rating>=4.00)
 
 #merge data to load final_data (avg rating for each movie title)
 names(data) <- c("movieId","avg.rating")
 ### data1 <- CARTS[,c("item", "movieId")] ##comment out db 4-6-22
-data1 <- MOVIES[,c("title", "movieId")]   ##add db 
-final_data <- merge(data1, data, by="movieId" )
+final_data <- merge(MOVIES[,c("title", "movieId")], data, by="movieId" )
 names(final_data) <- c("movieId","item","avg.rating")
-
+final_data$avg.rating <- round(final_data$avg.rating,2)
 
 #Creating Genre List
 genrelist <- c( "All Selected", "Adventure" , "Comedy", "Action", "Drama", "Crime", "Children","Mystery", "Documentary", "Animation", "Thriller", "Horror", "Fantasy","Western", "Film-Noir", "Romance", "War", "Sci-Fi", "Musical" )
 
 ### Recommend Function
-recommend <- function(likes=likes,TRANS,number=8,confidence=0.25,popularity=0.001, selected_genre = "All Selected" ) {
+recommend <- function(likes=likes,TRANS,number=10,confidence=0.25,popularity=0.001, selected_genre = "All Selected" ) {
   #Rule creation using the Apriori algorithm. A movie must be liked by at least 5 users to be considered
   RULES <- apriori(TRANS,
                    parameter = list(supp = 5/length(TRANS),
                                     conf=confidence,
                                     minlen=2,
-                                    maxtime=30),
+                                    maxtime=0),
                    appearance = list(lhs=likes,default="rhs"),
                    control = list(verbose=FALSE))
   
@@ -118,8 +121,8 @@ recommend <- function(likes=likes,TRANS,number=8,confidence=0.25,popularity=0.00
   
   #Subset RESULTS based off user-inputed popularity parameter 
   #In the future, we could use percentiles rather than popularity. Popularity is harder to understand without knowing the dataset
-  #Added check to see if popularity filter was too strong. If it was, the new popularity gets automatically adjusted to be the 5th percentile of movies in the results
-  if(min(RESULTS$Popularity) > popularity) {RESULTS2 <- subset(RESULTS, Popularity <= quantile(RESULTS$Popularity, probs = .05));warning("Popularity constraint too strict. Automatically adjusted")}
+  #Added check to see if popularity filter was too strong. If it was, the new popularity gets automatically adjusted to be the 15th percentile of movies in the results
+  if(min(RESULTS$Popularity) > popularity) {RESULTS2 <- subset(RESULTS, Popularity <= quantile(RESULTS$Popularity, probs = .15));warning("Popularity constraint too strict. Automatically adjusted")}
   if(min(RESULTS$Popularity) <= popularity) {RESULTS2 <- subset(RESULTS, Popularity <= popularity)}
   
   #Modification that allows all results to be returned if there are more than user-inputted number of recommendation
@@ -133,10 +136,10 @@ recommend <- function(likes=likes,TRANS,number=8,confidence=0.25,popularity=0.00
     row.names(RESULTS2) <- NULL
     
     #Make confidence look nicer
-    RESULTS2$Confidence <- paste(round(100*RESULTS2$Confidence,digits=2),"%",sep="")
+    #RESULTS2$Confidence <- paste(round(100*RESULTS2$Confidence,digits=2),"%",sep="")
     
     #Make popularity look nicer
-    RESULTS2$Popularity <- paste(round(100*RESULTS2$Popularity,digits=2),"%",sep="")
+    #RESULTS2$Popularity <- paste(round(100*RESULTS2$Popularity,digits=2),"%",sep="")
   }
   
   #If the number of recommendations returned is less than or equal to the number
@@ -149,16 +152,30 @@ recommend <- function(likes=likes,TRANS,number=8,confidence=0.25,popularity=0.00
     row.names(RESULTS2) <- NULL
     
     #Make confidence look nicer
-    RESULTS2$Confidence <- paste(round(100*RESULTS2$Confidence, digits=2), "%",sep="")
+    #RESULTS2$Confidence <- paste(round(100*RESULTS2$Confidence, digits=2), "%",sep="")
     
     #Make popularity look nicer
-    RESULTS2$Popularity <- paste(round(100*RESULTS2$Popularity, digits=2 ), "%",sep="")
+    #RESULTS2$Popularity <- paste(round(100*RESULTS2$Popularity, digits=2 ), "%",sep="")
   }
   
   if (nrow(RESULTS2) < number ) { warning("Number of recommendations with at least the desired level of confidence and popularity is less than the number requested") }
   return(RESULTS2)
 }
 
+rating_stars <- function(rating, max_rating = 5) {
+  star_icon <- function(empty = FALSE) {
+    tagAppendAttributes(shiny::icon("star"),
+      style = paste("color:", if (empty) "#edf0f2" else "orange"),
+      "aria-hidden" = "true"
+    )
+  }
+  #rounded_rating <- floor(rating + 0.5)  # always round up
+  stars <- lapply(seq_len(max_rating), function(i) {
+    if (i <= rating) star_icon() else star_icon(empty = TRUE)
+  })
+  label <- sprintf("%s out of %s stars", rating, max_rating)
+  div(title = label, role = "img", stars)
+}
 
 ### Shiny app barebones
 
@@ -169,14 +186,16 @@ ui <- fluidPage(
     #Allows user to search for favorite movies
     selectizeInput("UserLikes", label = "Enter Some of Your Favorite Movies:", choices = NULL, options = list(maxOptions = 5), multiple = T),
     #Allows user to choose the number of recommendations
-    sliderInput("RecNumber","How Many Recommendations?", value = 8, min = 1, max = 50, step = 1),
+    sliderInput("RecNumber","How Many Recommendations?", value = 10, min = 1, max = 50, step = 1),
     numericInput("Confidence","Minimum Confidence Level", value = .15, min = .01, max = 1, step = .01),
-    numericInput("Popularity","Maximum Popularity Level", value = .002, min = 0, max = .5, step = .0001),
-    selectInput("GenreSelected", label = "Enter genre preference:",genrelist),
+    radioButtons("Popularity", "Movie Obscurity Level", choices = list("Least Popular" = .001, "Somewhat Popular" = .002,"Most Popular" = .003),selected = 1),
+    #numericInput("Popularity","Maximum Popularity Level", value = .002, min = 0, max = .5, step = .0001),
+    selectInput("GenreSelected", label = "Enter Genre Preference (Optional):",genrelist),
     actionButton("SubmitButton", "Get Recommendations")
   ),
   mainPanel(
-    tableOutput("view")
+    #tableOutput("view")
+    reactableOutput('view')
   )
   
   
@@ -188,8 +207,18 @@ server <- function(input, output, session) {
   x3 <- eventReactive(input$SubmitButton, {input$Confidence})
   x4 <- eventReactive(input$SubmitButton, {input$Popularity})
   x5 <- eventReactive(input$SubmitButton, {input$GenreSelected})
-  output$view <- renderTable({recommend(likes = x1(), TRANS, number = x2(), confidence = x3(), popularity = x4(), selected_genre = x5())})
+  output$view <- renderReactable({reactable(
+    recommend(likes = x1(), TRANS, number = x2(), confidence = x3(), popularity = x4(), selected_genre = x5()),
+    highlight = TRUE,
+    columns = list(
+            Confidence = colDef(format = colFormat(percent = TRUE, digits = 2)),
+            Popularity = colDef(format = colFormat(percent = TRUE, digits = 2)),
+            Rating = colDef(format = colFormat(digits = 2), cell = function(value) rating_stars(value))
+          )
+    )
+    })
+  
+  # output$view <- renderTable({recommend(likes = x1(), TRANS, number = x2(), confidence = x3(), popularity = x4(), selected_genre = x5())})
   
 }
 shinyApp(ui, server)
-
