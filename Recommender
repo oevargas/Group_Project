@@ -225,7 +225,7 @@ server <- function(input, output, session) {
             Confidence = colDef(format = colFormat(percent = TRUE, digits = 2)),
             Popularity = colDef(format = colFormat(percent = TRUE, digits = 2)),
             Rating = colDef(format = colFormat(digits = 2), cell = function(value) rating_stars(value)),
-            tmdbLink = colDef(cell = function(value) {htmltools::tags$a(href = value, target = "_blank", value)})
+            Link = colDef(cell = function(value) {htmltools::tags$a(href = value, target = "_blank", value)})
           )
     )
     })
